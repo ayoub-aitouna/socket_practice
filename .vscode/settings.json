@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "sockaddr.h": "c",
+        "in.h": "c"
+    }
+}
