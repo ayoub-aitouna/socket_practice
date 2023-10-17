@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <arpa/inet.h>
+#include "../io/get_next_line/get_next_line.h"
 
 int main()
 {
@@ -20,8 +21,12 @@ int main()
     int status = connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr));
     if (status == -1)
         return (close(socket_fd), perror("connect : "), 1);
-    char msg[] = "hello server is me clinet ";
-    int r = write(socket_fd, msg, strlen(msg));
-    if (r == -1)
-        return (close(socket_fd), perror("write : "), 1);
+    while (1)
+    {
+        printf("%s", get_next_line(socket_fd));
+        char *msg = get_next_line(0);
+        if (!msg)
+            break;
+        dprintf(socket_fd, "%s", msg);
+    }
 }
