@@ -28,7 +28,7 @@ $(tcp_client_name) : $(io_lib_name) $(tcp_obj)
 	gcc $(tcp_obj) $(io_lib_name) -o $(tcp_client_name)
 
 $(server) : $(io_lib_name) $(server_obj)
-	gcc $(server_obj) $(io_lib_name) -o $(server)
+	gcc $(server_obj) $(io_lib_name) -pthread -o $(server)
 
 clean:
 	rm -rf $(OBJ_DIR) $(tcp_client_name) $(server) $(io_lib_name)
