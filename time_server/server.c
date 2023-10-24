@@ -15,6 +15,7 @@ int main()
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons(8080);
+    
     addr.sin_addr.s_addr = INADDR_ANY;
     int bind_status = bind(socket_fd, (struct sockaddr *)&addr, sizeof(addr));
     if (bind_status == -1)
