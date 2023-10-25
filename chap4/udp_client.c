@@ -19,7 +19,7 @@ int main(int ac, char **av)
     struct addrinfo hints;
     struct addrinfo *addr;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_socktype = SOCK_DGRAM;
     getaddrinfo(av[1], av[2], &hints, &addr);
     int socket_fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
     if (socket_fd < 0)
