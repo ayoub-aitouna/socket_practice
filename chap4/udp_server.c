@@ -44,7 +44,13 @@ int main()
             return (perror("select() failed : "), 1);
         if (FD_ISSET(s, &copy))
         {
-            int bytes = recv();
+            char buffer[4096];
+            struct sockaddr_storage client_address;
+            socklen_t client_addresslen = sizeof(client_address);
+            int bytes = recvfrom(s, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_address, &client_addresslen);
+            if (bytes < 1)
+                return (perror("recvfrom() failed : "), 1);
+            sendto(s, buffer, bytes, 0, (struct sockaddr *)&client_address, client_addresslen);
         }
     }
 }
