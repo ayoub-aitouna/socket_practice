@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "types.h": "c",
+        "inet.h": "c",
+        "string.h": "c",
+        "socket.h": "c",
+        "stdio.h": "c",
+        "unistd.h": "c"
+    }
+}

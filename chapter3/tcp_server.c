@@ -10,7 +10,6 @@
 
 #include <sys/select.h>
 #include <sys/time.h>
-#include <netdb.h>
 
 int main()
 {
