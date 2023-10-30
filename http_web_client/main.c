@@ -90,10 +90,21 @@ int connect_to_host(t_url_params params)
     return (socket_fd);
 }
 
+#define RESPONSE_SIZE 8192
+#define TIMOUT 5
 int main()
 {
+    char responce[RESPONSE_SIZE + 1];
+    char *p = responce, *q;
+    char *end = responce + RESPONSE_SIZE;
+    char *body;
+
+    enum {lenght, chuncked, connection};
+    int encoding = 0;
+    int remaining = 0;
     char url[] = "http://www.google.com/index.html?user=10";
     t_url_params p_url = input_parse(url);
-    connect_to_host(p_url);
-    send_request(0, p_url);
+    int socket_fd = connect_to_host(p_url);
+    const clock_t start_time = clock();
+    send_request(socket_fd, p_url);
 }
