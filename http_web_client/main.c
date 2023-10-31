@@ -9,6 +9,8 @@
 #include <errno.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <time.h>
+#include <stdlib.h>
 
 typedef struct s_url_params
 {
@@ -90,21 +92,118 @@ int connect_to_host(t_url_params params)
     return (socket_fd);
 }
 
-#define RESPONSE_SIZE 8192
+#define RESPONSE_SIZE 18192
 #define TIMOUT 5
 int main()
 {
     char responce[RESPONSE_SIZE + 1];
-    char *p = responce, *q;
+    char *res_index = responce, *tmp;
     char *end = responce + RESPONSE_SIZE;
     char *body;
 
-    enum {lenght, chuncked, connection};
+    enum
+    {
+        lenght,
+        chuncked,
+        connection
+    };
     int encoding = 0;
     int remaining = 0;
     char url[] = "http://www.google.com/index.html?user=10";
     t_url_params p_url = input_parse(url);
     int socket_fd = connect_to_host(p_url);
-    const clock_t start_time = clock();
     send_request(socket_fd, p_url);
+    const clock_t start_time = clock();
+    while (1)
+    {
+        if ((clock() - start_time) / CLOCKS_PER_SEC > TIMOUT)
+            return printf("failed timout \n"), 1;
+
+        // if (res_index == end)
+        //     return printf("too large \n"), 1;
+
+        fd_set reads;
+        FD_ZERO(&reads);
+        FD_SET(socket_fd, &reads);
+
+        struct timeval timeout = (struct timeval){.tv_sec = 0, .tv_usec = 2000};
+        if (select(socket_fd + 1, &reads, 0, 0, &timeout) < 0)
+            return printf("select(), failed \n"), 1;
+
+        if (FD_ISSET(socket_fd, &reads))
+        {
+            int rb = recv(socket_fd, res_index, end - res_index, 0);
+            if (rb < 1)
+            {
+                if (encoding == connection && body)
+                    printf("%*s", (int)(end - body), body);
+                return printf("connection closed .\n");
+            }
+            res_index += rb;
+            *res_index = 0;
+            if (!body && (body = strstr(responce, "\r\n\r\n")))
+            {
+                *body = 0;
+                body += 4;
+                printf("Recieved Headers %s \n", responce);
+                tmp = strstr(responce, "\nContent-Lenght: ");
+
+                if (tmp)
+                {
+                    encoding = lenght;
+                    tmp = strstr(tmp, " ");
+                    tmp++;
+                    remaining = strtol(tmp, 0, 10);
+                }
+                else
+                {
+                    tmp = strstr(responce, "\nTransfer-Encoding: chunked");
+                    if (tmp)
+                    {
+                        remaining = 0;
+                        encoding = chuncked;
+                    }
+                    else
+                        encoding = connection;
+                }
+                printf("Received Body \n");
+            }
+
+            if (body)
+            {
+                if (encoding == lenght)
+                {
+                    if (res_index - body >= remaining)
+                        return printf("%*s", remaining, body), 0;
+                }
+                else if (encoding == chuncked)
+                {
+                    do
+                    {
+                        if (remaining == 0)
+                        {
+                            if (tmp = strstr(body, "\r\n"))
+                            {
+                                remaining = strtol(body, 0, 16);
+                                if (!remaining)
+                                    return 0;
+                                body = tmp + 2;
+                            }
+                            else
+                                break;
+                        }
+                        if (remaining && res_index - body >= remaining)
+                        {
+                            printf("--------chunk %d ------------ \n", remaining);
+                            printf("%*s", remaining, body);
+                            printf("-------------------------------- \n\n\n");
+
+                            body += remaining + 2;
+                            remaining = 0;
+                        }
+                    } while (!remaining);
+                }
+            }
+        }
+    }
 }
