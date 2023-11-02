@@ -3,7 +3,7 @@ NAME = server
 OBJ_DIR			:= .compiled
 SRC				:= $(wildcard src/*.c) $(wildcard src/**/*.c) $(wildcard src/**/**/*.c)  $(wildcard src/**/**/**/*.c)
 OBJ				:= $(patsubst %.c, $(OBJ_DIR)/%.o, $(SRC))
-# CFLAGS			:= -fsanitize=address -g3
+CFLAGS			:= -fsanitize=address -g3
 all: $(NAME)
 
 $(OBJ_DIR)/%.o : %.c

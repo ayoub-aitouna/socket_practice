@@ -41,7 +41,10 @@ t_url_params input_parse(char *url)
     if (*s == ':')
     {
         *s++ = 0;
+        printf("is : %s\n", s);
         p_url.port = s;
+        while (*s && *s != '/')
+            s++;
     }
     p_url.path = s;
     if (*s == '/')
@@ -74,19 +77,20 @@ int connect_to_host(t_url_params params)
     hints.ai_socktype = SOCK_STREAM;
 
     if (getaddrinfo(params.hostname, params.port, &hints, &addr))
-        return printf("getaddrinfo() failed \n"), -1;
+        return perror("getaddrinfo() failed \n"), -1;
 
     char addr_buffer[1024];
     char serv_buffer[1024];
     getnameinfo(addr->ai_addr, addr->ai_addrlen, addr_buffer, sizeof(addr_buffer),
                 serv_buffer, sizeof(serv_buffer), NI_NUMERICHOST | NI_NUMERICSERV);
+
     printf("%s:%s \n", addr_buffer, serv_buffer);
     int socket_fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
     if (socket_fd < 0)
         return printf("socket() failed \n"), -1;
 
     if (connect(socket_fd, addr->ai_addr, addr->ai_addrlen) < 0)
-        return printf("connect() failed \n"), -1;
+        return perror("connect() failed \n"), -1;
     printf("Connected \n");
     freeaddrinfo(addr);
     return (socket_fd);
@@ -94,7 +98,7 @@ int connect_to_host(t_url_params params)
 
 #define RESPONSE_SIZE 18192
 #define TIMOUT 5
-int main()
+int main(int ac, char **av)
 {
     char responce[RESPONSE_SIZE + 1];
     char *res_index = responce, *tmp;
@@ -109,18 +113,20 @@ int main()
     };
     int encoding = 0;
     int remaining = 0;
-    char url[] = "http://www.google.com/index.html?user=10";
+    if (ac < 2)
+        return 1;
+    char *url = av[1];
     t_url_params p_url = input_parse(url);
+    printf("param port :: %s \n", p_url.port);
     int socket_fd = connect_to_host(p_url);
+    if (socket_fd < 0)
+        return 1;
     send_request(socket_fd, p_url);
     const clock_t start_time = clock();
     while (1)
     {
         if ((clock() - start_time) / CLOCKS_PER_SEC > TIMOUT)
             return printf("failed timout \n"), 1;
-
-        // if (res_index == end)
-        //     return printf("too large \n"), 1;
 
         fd_set reads;
         FD_ZERO(&reads);
@@ -196,7 +202,7 @@ int main()
                         {
                             printf("--------chunk %d ------------ \n", remaining);
                             printf("%*s", remaining, body);
-                            printf("-------------------------------- \n\n\n");
+                            printf("\n\n-------------------------------- \n\n\n");
 
                             body += remaining + 2;
                             remaining = 0;

@@ -1,7 +1,6 @@
-
 #include "server.h"
 
-const char *get_content_type(t_list *list, const char *path)
+char *get_content_type(t_list *list, const char *path)
 {
     char *key = strrchr(path, '.');
     while (list)
@@ -111,14 +110,14 @@ int create_socket(const char *host, const char *port)
     printf("Creating Socket \n");
     socket_fd = socket(addr->ai_family, addr->ai_socktype, 0);
     if (socket_fd < 0)
-        return printf("socket() failed \n"), -1;
+        return perror("socket() failed \n"), -1;
     if (bind(socket_fd, addr->ai_addr, addr->ai_addrlen) < 0)
-        return printf("bind() failed \n"), -1;
+        return perror("bind() failed \n"), -1;
     freeaddrinfo(addr);
 
     printf("Listinig \n");
     if (listen(socket_fd, 10) < 0)
-        return printf("listen() failed \n"), -1;
+        return perror("listen() failed \n"), -1;
     return (socket_fd);
 }
 
@@ -138,6 +137,7 @@ t_client_info *get_client(t_client_info **clinets, int fd)
     new->address_len = sizeof(new->address);
     new->next = *clinets;
     new->socket_fd = fd;
+    new->recieved_bytes = 0;
     *clinets = new;
     return (new);
 }
@@ -164,8 +164,8 @@ void drop_client(t_client_info **clinets, t_client_info *client)
 
 char *get_client_address(t_client_info *client)
 {
-    char *buffer = malloc(100);
-    getnameinfo((struct sockaddr *)&client->address, client->address_len, buffer, sizeof(buffer), 0, 0, NI_NUMERICHOST);
+    char *buffer = malloc(50);
+    getnameinfo((struct sockaddr *)&client->address, client->address_len, buffer, 50, 0, 0, NI_NUMERICHOST);
     return (buffer);
 }
 
@@ -189,7 +189,7 @@ fd_set wait_on_client(t_client_info **clinets, int srver_fd)
             max_socket = tmp->socket_fd;
         tmp = tmp->next;
     }
-    if (select(max_socket, &reads, 0, 0, &time) < 0)
+    if (select(max_socket + 1, &reads, 0, 0, &time) < 0)
     {
         printf("select() failed");
         exit(1);
@@ -199,6 +199,7 @@ fd_set wait_on_client(t_client_info **clinets, int srver_fd)
 
 void send_status(t_list *codes, t_client_info **clinets, t_client_info *client, int status_code)
 {
+    printf("sending status %d \n", status_code);
     char responce[1024];
     char *message = get_status_message(codes, status_code);
     sprintf(responce, "HTTP/1.1 %d %s \r\n"
@@ -206,14 +207,44 @@ void send_status(t_list *codes, t_client_info **clinets, t_client_info *client, 
                       "Content-Length: %ld\r\n\r\n"
                       "%s",
             status_code, message, strlen(message), message);
-    send(client->socket_fd, responce, sizeof(responce), 0);
+    printf("%s", responce);
+    if (send(client->socket_fd, responce, strlen(responce), 0) < 0)
+        perror("send() failed ");
+    close(client->socket_fd);
     drop_client(clinets, client);
 }
 
-void serve_resources(t_list *types, t_list *codes, t_client_info *clients, t_client_info *client, char *path)
+void send_headers(int fd, t_list *codes, int code, size_t content_lenght, char *content_type)
+{
+    char buffer[2028];
+    char *message;
+    message = get_status_message(codes, code);
+
+    sprintf(buffer, "HTTP/1.1 %d %s\r\n", code, message);
+    send(fd, buffer, strlen(buffer), 0);
+
+    sprintf(buffer, "Connection: close\r\n");
+    send(fd, buffer, strlen(buffer), 0);
+
+    sprintf(buffer, "Content-Lenght: %ld\r\n", content_lenght);
+    send(fd, buffer, strlen(buffer), 0);
+
+    sprintf(buffer, "Content-Type: %s\r\n", content_type);
+    send(fd, buffer, strlen(buffer), 0);
+
+    send(fd, "\r\n", 2, 0);
+}
+
+void serve_resources(t_list *types, t_list *codes, t_client_info **clients, t_client_info *client, char *path)
 {
     char full_path[128];
+    size_t content_lenght;
+    char *content_type;
+    FILE *file;
+    char buffer[100];
+
     printf("serving %s to client : %s \n", path, get_client_address(client));
+
     if (strcmp(path, "/") == 0)
         path = "/index.html";
     if (!path || strlen(path) > 100)
@@ -222,14 +253,25 @@ void serve_resources(t_list *types, t_list *codes, t_client_info *clients, t_cli
         return send_status(codes, clients, client, 404);
     sprintf(full_path, "public%s", path);
 
-    FILE *file = fopen(full_path, "rb");
+    file = fopen(full_path, "rb");
     if (!file)
         return send_status(codes, clients, client, 404);
     fseek(file, 0L, SEEK_END);
-    size_t cl = ftell(file);
+    content_lenght = ftell(file);
     rewind(file);
+    send_headers(client->socket_fd, codes, 200, content_lenght, get_content_type(types, full_path));
 
-    char ct = get_content_type(types, full_path);
+    // send body
+    while (1)
+    {
+        int r = fread(buffer, 1, 100, file);
+        if (r == 0)
+            break;
+        send(client->socket_fd, buffer, r, 0);
+    }
+
+    fclose(file);
+    drop_client(clients, client);
 }
 
 int main()
@@ -237,11 +279,76 @@ int main()
     // memes
     t_list *content_types = NULL;
     t_list *status_codes = NULL;
+    t_client_info *clients = NULL;
     init_meme_types(&content_types);
     init_status_codes(&status_codes);
-    // clients
-    t_client_info *clients = NULL;
-    get_client(&clients, 5);
 
-    send_status(status_codes, &clients, clients, 200);
+    int server_fd = create_socket(0, "8080");
+    if (server_fd < 0)
+        return printf("create_socket() failled \n"), 1;
+
+    while (1)
+    {
+        fd_set reads;
+        reads = wait_on_client(&clients, server_fd);
+
+        if (FD_ISSET(server_fd, &reads))
+        {
+            t_client_info *new_client = get_client(&clients, -1);
+            new_client->socket_fd = accept(server_fd,
+                                           (struct sockaddr *)&new_client->address,
+                                           &new_client->address_len);
+            if (new_client->socket_fd < 0)
+                return printf("err or while accepting new connection \n"),
+                       1;
+            printf("new connection from %s\n", get_client_address(new_client));
+            continue;
+        }
+
+        t_client_info *tmp = clients;
+        while (tmp)
+        {
+            if (FD_ISSET(tmp->socket_fd, &reads))
+            {
+                send_status(status_codes, &clients, tmp, 404);
+                break;
+
+                /*
+                break;
+                if (tmp->recieved_bytes == MAX_REQ_SIZE)
+                    return send_status(status_codes, &clients, tmp, 400), 1;
+
+                int rb = recv(tmp->socket_fd, tmp->request + tmp->recieved_bytes,
+                              MAX_REQ_SIZE - tmp->recieved_bytes, 0);
+                printf("recived %d bytes \n", rb);
+                if (rb < 1)
+                {
+                    printf("connection has been closed by peer %s\n", get_client_address(tmp));
+                    drop_client(&clients, tmp);
+                }
+                else
+                {
+                    tmp->recieved_bytes += rb;
+                    tmp->request[tmp->recieved_bytes] = 0;
+                    if (strstr(tmp->request, "\r\n\r\n"))
+                    {
+                        if (strncmp(tmp->request, "GET /", 5) == 0)
+                        {
+                            char *path = tmp->request + 4;
+                            char *end = strstr(path, " ");
+                            if (!end)
+                                return send_status(status_codes, &clients, tmp, 400), 1;
+                            *end = 0;
+                            serve_resources(content_types, status_codes, &clients, tmp, path);
+                        }
+                        else
+                            return send_status(status_codes, &clients, tmp, 40), 1;
+                    }
+                }
+
+            */
+            }
+            tmp = tmp->next;
+        }
+    }
 }
