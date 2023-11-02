@@ -16,4 +16,18 @@
 #include <stdlib.h>
 #include "linked_list/linked_list.h"
 
+#define MAX_REQ_SIZE 2014
+
+typedef struct  client_info
+{
+    int socket_fd;
+    struct sockaddr_storage address;
+    socklen_t address_len;
+    char request[MAX_REQ_SIZE + 1];
+    int recieved_bytes;
+    struct  client_info *next;
+
+} t_client_info;
+
+
 #endif
