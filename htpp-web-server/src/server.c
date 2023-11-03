@@ -108,11 +108,18 @@ int create_socket(const char *host, const char *port)
     getaddrinfo(host, port, &hint, &addr);
 
     printf("Creating Socket \n");
+    int resure = 1;
     socket_fd = socket(addr->ai_family, addr->ai_socktype, 0);
+
     if (socket_fd < 0)
         return perror("socket() failed \n"), -1;
+
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &resure, sizeof(int)) < 0)
+        return (perror("resure : "), 2);
+
     if (bind(socket_fd, addr->ai_addr, addr->ai_addrlen) < 0)
         return perror("bind() failed \n"), -1;
+
     freeaddrinfo(addr);
 
     printf("Listinig \n");
@@ -207,7 +214,8 @@ void send_status(t_list *codes, t_client_info **clinets, t_client_info *client, 
                       "Content-Length: %ld\r\n\r\n"
                       "%s",
             status_code, message, strlen(message), message);
-    printf("%s", responce);
+    printf("resonse is :...\n\n%s\n\n...", responce);
+    fflush(stdout);
     if (send(client->socket_fd, responce, strlen(responce), 0) < 0)
         perror("send() failed ");
     close(client->socket_fd);
@@ -250,12 +258,18 @@ void serve_resources(t_list *types, t_list *codes, t_client_info **clients, t_cl
     if (!path || strlen(path) > 100)
         return send_status(codes, clients, client, 400);
     if (strstr(path, ".."))
+    {
+        printf("%s Not Found 404", path);
         return send_status(codes, clients, client, 404);
+    }
     sprintf(full_path, "public%s", path);
 
     file = fopen(full_path, "rb");
     if (!file)
+    {
+        printf("file not found : %s\n", full_path);
         return send_status(codes, clients, client, 404);
+    }
     fseek(file, 0L, SEEK_END);
     content_lenght = ftell(file);
     rewind(file);
@@ -280,6 +294,8 @@ int main()
     t_list *content_types = NULL;
     t_list *status_codes = NULL;
     t_client_info *clients = NULL;
+    t_client_info *tmp;
+
     init_meme_types(&content_types);
     init_status_codes(&status_codes);
 
@@ -305,16 +321,13 @@ int main()
             continue;
         }
 
-        t_client_info *tmp = clients;
+        tmp = clients;
         while (tmp)
         {
+            t_client_info *next = tmp->next;
             if (FD_ISSET(tmp->socket_fd, &reads))
             {
-                send_status(status_codes, &clients, tmp, 404);
-                break;
 
-                /*
-                break;
                 if (tmp->recieved_bytes == MAX_REQ_SIZE)
                     return send_status(status_codes, &clients, tmp, 400), 1;
 
@@ -345,10 +358,18 @@ int main()
                             return send_status(status_codes, &clients, tmp, 40), 1;
                     }
                 }
-
-            */
             }
-            tmp = tmp->next;
+            tmp = next;
         }
     }
+
+    tmp = clients;
+    while (tmp)
+    {
+        t_client_info *next = tmp->next;
+        free(tmp);
+        tmp = next;
+    }
+    ft_lstclear(&content_types, free);
+    ft_lstclear(&status_codes, free);
 }
