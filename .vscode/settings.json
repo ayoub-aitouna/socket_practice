@@ -9,6 +9,7 @@
         "unistd.h": "c",
         "select.h": "c",
         "time.h": "c",
-        "server.h": "c"
+        "server.h": "c",
+        "errno.h": "c"
     }
 }
