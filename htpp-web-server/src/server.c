@@ -79,7 +79,14 @@ void init_status_codes(t_list **list)
     ft_lstadd_back(list, ft_lstnew("504", "Gateway Timeout"));
     ft_lstadd_back(list, ft_lstnew("505", "HTTP Version Not Supported"));
 }
-
+int is_socket_open(int socket_fd)
+{
+    printf("checking %d if is open : ", socket_fd);
+    int i = fcntl(socket_fd, F_GETFD);
+    if (i < 0)
+        return printf("not open \n"), perror("fcntl"), -1;
+    return printf(" open \n"), 1;
+}
 char *get_status_message(t_list *list, int code)
 {
     char key[60];
@@ -166,6 +173,7 @@ void drop_client(t_client_info **clinets, t_client_info *client)
         *tmp = (*tmp)->next;
     }
     printf("drop clinet not found \n");
+    fflush(stdout);
     exit(1);
 }
 
@@ -176,32 +184,31 @@ char *get_client_address(t_client_info *client)
     return (buffer);
 }
 
-fd_set wait_on_client(t_client_info **clinets, int srver_fd)
+struct pollfd *wait_on_client(t_client_info **clinets, int server_fd)
 {
-    t_client_info *tmp;
-    struct timeval time;
-    fd_set reads;
+    struct pollfd *fds = malloc(10 * sizeof(struct pollfd));
 
-    FD_ZERO(&reads);
-    FD_SET(srver_fd, &reads);
-    int max_socket = srver_fd;
-    tmp = *clinets;
-    time.tv_sec = 0;
-    time.tv_usec = 2000;
+    fds[0].fd = server_fd;
+    fds[0].events = POLLIN | POLLOUT;
 
+    int i = 1;
+    t_client_info *tmp = *clinets;
     while (tmp)
     {
-        FD_SET(tmp->socket_fd, &reads);
-        if (max_socket < tmp->socket_fd)
-            max_socket = tmp->socket_fd;
+        fds[i].fd = tmp->socket_fd;
+        fds[i].events = POLLIN | POLLOUT;
         tmp = tmp->next;
+        i++;
     }
-    if (select(max_socket + 1, &reads, 0, 0, &time) < 0)
+    int ready = poll(fds, i, 5000);
+    if (ready < 0)
     {
-        printf("select() failed");
+        perror("poll() failed");
         exit(1);
     }
-    return (reads);
+    if (ready > 0)
+        printf("ready  \n");
+    return (fds);
 }
 
 void send_status(t_list *codes, t_client_info **clinets, t_client_info *client, int status_code)
@@ -252,7 +259,8 @@ void serve_resources(t_list *types, t_list *codes, t_client_info **clients, t_cl
     char buffer[100];
 
     printf("serving %s to client : %s \n", path, get_client_address(client));
-
+    if (is_socket_open(client->socket_fd) < 0)
+        return;
     if (strcmp(path, "/") == 0)
         path = "/index.html";
     if (!path || strlen(path) > 100)
@@ -275,7 +283,6 @@ void serve_resources(t_list *types, t_list *codes, t_client_info **clients, t_cl
     rewind(file);
     send_headers(client->socket_fd, codes, 200, content_lenght, get_content_type(types, full_path));
 
-    // send body
     while (1)
     {
         int r = fread(buffer, 1, 100, file);
@@ -283,8 +290,7 @@ void serve_resources(t_list *types, t_list *codes, t_client_info **clients, t_cl
             break;
         send(client->socket_fd, buffer, r, 0);
     }
-
-    fclose(file);
+    printf("done serving file ... \n");
     drop_client(clients, client);
 }
 
@@ -305,10 +311,10 @@ int main()
 
     while (1)
     {
-        fd_set reads;
-        reads = wait_on_client(&clients, server_fd);
+        struct pollfd *fds;
+        fds = wait_on_client(&clients, server_fd);
 
-        if (FD_ISSET(server_fd, &reads))
+        if (fds[0].revents && POLLIN)
         {
             t_client_info *new_client = get_client(&clients, -1);
             new_client->socket_fd = accept(server_fd,
@@ -322,12 +328,17 @@ int main()
         }
 
         tmp = clients;
+        int i = 1;
         while (tmp)
         {
             t_client_info *next = tmp->next;
-            if (FD_ISSET(tmp->socket_fd, &reads))
+            if (fds[i].revents && POLLIN)
             {
-
+                if (is_socket_open(tmp->socket_fd) < 0)
+                {
+                    tmp = next;
+                    continue;
+                }
                 if (tmp->recieved_bytes == MAX_REQ_SIZE)
                     return send_status(status_codes, &clients, tmp, 400), 1;
 
@@ -343,25 +354,31 @@ int main()
                 {
                     tmp->recieved_bytes += rb;
                     tmp->request[tmp->recieved_bytes] = 0;
-                    if (strstr(tmp->request, "\r\n\r\n"))
+                }
+            }
+
+            if (fds[i].revents && POLLOUT)
+            {
+                if (strstr(tmp->request, "\r\n\r\n"))
+                {
+                    if (strncmp(tmp->request, "GET /", 5) == 0)
                     {
-                        if (strncmp(tmp->request, "GET /", 5) == 0)
-                        {
-                            char *path = tmp->request + 4;
-                            char *end = strstr(path, " ");
-                            if (!end)
-                                return send_status(status_codes, &clients, tmp, 400), 1;
-                            *end = 0;
-                            serve_resources(content_types, status_codes, &clients, tmp, path);
-                        }
-                        else
-                            return send_status(status_codes, &clients, tmp, 40), 1;
+                        char *path = tmp->request + 4;
+                        char *end = strstr(path, " ");
+                        if (!end)
+                            return send_status(status_codes, &clients, tmp, 400), 1;
+                        *end = 0;
+                        serve_resources(content_types, status_codes, &clients, tmp, path);
                     }
+                    else
+                        return send_status(status_codes, &clients, tmp, 40), 1;
                 }
             }
             tmp = next;
+            i++;
         }
     }
+    printf("end executing \n");
 
     tmp = clients;
     while (tmp)

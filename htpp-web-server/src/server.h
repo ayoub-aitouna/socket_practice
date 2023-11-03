@@ -15,6 +15,8 @@
 #include <time.h>
 #include <stdlib.h>
 #include "linked_list/linked_list.h"
+#include <poll.h>
+#include <fcntl.h>
 
 #define MAX_REQ_SIZE 2014
 
@@ -28,6 +30,5 @@ typedef struct  client_info
     struct  client_info *next;
 
 } t_client_info;
-
 
 #endif
