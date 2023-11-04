@@ -96,29 +96,23 @@ int main()
                 {
                     tmp->recieved_bytes += rb;
                     tmp->request[tmp->recieved_bytes] = 0;
+                    if (strstr(tmp->request, "\r\n\r\n"))
+                    {
+                        if (strncmp(tmp->request, "GET /", 5) == 0)
+                        {
+                            char *path = tmp->request + 4;
+                            char *end = strstr(path, " ");
+                            if (!end)
+                                return send_status(status_codes, &clients, tmp, 400), 1;
+                            *end = 0;
+                            serve_resources(content_types, status_codes, &clients, tmp, path);
+                        }
+                        else
+                            return send_status(status_codes, &clients, tmp, 40), 1;
+                    }
                 }
             }
 
-            if (fds[i].revents && POLLOUT)
-            {
-                char *headers;
-                if ((headers = strstr(tmp->request, "\r\n\r\n")))
-                {
-                    *headers = 0;
-                    printf("{\n\n%s\n\n}\n", tmp->request);
-                    if (strncmp(tmp->request, "GET /", 5) == 0)
-                    {
-                        char *path = tmp->request + 4;
-                        char *end = strstr(path, " ");
-                        if (!end)
-                            return send_status(status_codes, &clients, tmp, 400), 1;
-                        *end = 0;
-                        serve_resources(content_types, status_codes, &clients, tmp, path);
-                    }
-                    else
-                        return send_status(status_codes, &clients, tmp, 40), 1;
-                }
-            }
             tmp = next;
             i++;
         }

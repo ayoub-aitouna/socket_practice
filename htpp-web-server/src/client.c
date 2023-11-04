@@ -45,13 +45,17 @@ void drop_client(t_client_info **clinets, t_client_info *client)
 char *get_client_address(t_client_info *client)
 {
     char *buffer = malloc(50);
-    getnameinfo((struct sockaddr *)&client->address, client->address_len, buffer, 50, 0, 0, NI_NUMERICHOST);
+    memset(buffer, 0, sizeof(buffer));
+    if (!client)
+        strcpy(buffer, "empty");
+    else
+        getnameinfo((struct sockaddr *)&client->address, client->address_len, buffer, 50, 0, 0, NI_NUMERICHOST);
     return (buffer);
 }
 
 struct pollfd *wait_on_client(t_client_info **clinets, int server_fd)
 {
-    struct pollfd *fds = malloc(10 * sizeof(struct pollfd));
+    struct pollfd *fds = malloc(50 * sizeof(struct pollfd));
 
     fds[0].fd = server_fd;
     fds[0].events = POLLIN | POLLOUT;
